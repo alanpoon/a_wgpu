@@ -1,0 +1,50 @@
+[package]
+name = "ambient_app"
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = "2021"
+description = "Ambient app implementation. Host-only."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/AmbientRun/Ambient"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ambient_sys = { path = "../../../Ambient3/crates/sys" , version = "0.3.2-nightly-2023-12-29" }
+ambient_native_std = { path = "../../../Ambient3/crates/native_std" , version = "0.3.2-nightly-2023-12-29" }
+ambient_core = { path = "../../../Ambient3/crates/core" , version = "0.3.2-nightly-2023-12-29" }
+ambient_gizmos = { path = "../../../Ambient3/crates/gizmos" , version = "0.3.2-nightly-2023-12-29" }
+ambient_gpu = { path = "../../../Ambient3/crates/gpu" , version = "0.3.2-nightly-2023-12-29" }
+ambient_gpu_ecs = { path = "../../../Ambient3/crates/gpu_ecs" , version = "0.3.2-nightly-2023-12-29" }
+ambient_renderer = { path = "../../../Ambient3/crates/renderer" , version = "0.3.2-nightly-2023-12-29" }
+ambient_cameras = { path = "../../../Ambient3/crates/cameras" , version = "0.3.2-nightly-2023-12-29" }
+ambient_ecs = { path = "../../../Ambient3/crates/ecs" , version = "0.3.2-nightly-2023-12-29" }
+ambient_ui_native = { path = "../../../Ambient3/crates/ui_native" , version = "0.3.2-nightly-2023-12-29" }
+ambient_focus = { path = "../../../Ambient3/crates/focus" , version = "0.3.2-nightly-2023-12-29" }
+ambient_input = { path = "../../../Ambient3/crates/input" , version = "0.3.2-nightly-2023-12-29" }
+ambient_model = { path = "../../../Ambient3/crates/model" , version = "0.3.2-nightly-2023-12-29" }
+ambient_animation = { path = "../../../Ambient3/crates/animation" , version = "0.3.2-nightly-2023-12-29" }
+ambient_procedurals = { path = "../../../Ambient3/crates/procedurals" , version = "0.3.2-nightly-2023-12-29" }
+ambient_settings = { path = "../../../Ambient3/crates/settings" , version = "0.3.2-nightly-2023-12-29" }
+
+ambient_element = { path = "../../../Ambient3/shared_crates/element" , version = "0.3.2-nightly-2023-12-29" }
+ambient_primitives = { path = "../../../Ambient3/crates/primitives" , version = "0.3.2-nightly-2023-12-29" }
+winit = { version = "0.28.7", default-features = false,features = ["android-native-activity"] }
+
+#winit = { workspace = true }
+flume = { workspace = true }
+glam = { workspace = true }
+profiling = { workspace = true }
+anyhow = { workspace = true }
+wgpu = { workspace = true }
+puffin = { workspace = true, optional = true }
+puffin_http = { workspace = true, optional = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+futures = "0.3.30"
+
+[target.'cfg(not(target_os = "unknown"))'.dependencies]
+thread-priority = { workspace = true }
+
+#[patch.crates-io]
+#arboard = {path = "crates/arboard"}
