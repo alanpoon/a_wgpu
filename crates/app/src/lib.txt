@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc, time::Duration, ops::DerefMut};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use ambient_cameras::assets_camera_systems;
 pub use ambient_core::gpu;
@@ -34,7 +34,7 @@ use ambient_native_std::{
 };
 use ambient_procedurals::{procedural_storage, ProceduralStorage};
 use ambient_renderer::lod::lod_system;
-use ambient_settings::{SettingsKey, RenderSettings};
+use ambient_settings::SettingsKey;
 use ambient_sys::{task::RuntimeHandle, time::Instant};
 
 use glam::{uvec2, vec2, IVec2, UVec2, Vec2};
@@ -44,12 +44,10 @@ use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, Event, KeyboardInput, ModifiersState, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{CursorGrabMode, Fullscreen, Window, WindowBuilder}, 
-    //platform::web::EventLoopExtWebSys,
+    window::{CursorGrabMode, Fullscreen, Window, WindowBuilder},
 };
-use winit::platform::android::activity::AndroidApp;
+
 mod renderers;
-pub mod c;
 
 fn default_title() -> String {
     "ambient".into()
@@ -314,13 +312,12 @@ impl AppBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<App> {
-        tracing::debug!("app builder");
         crate::init_all_components();
 
         let runtime = RuntimeHandle::current();
 
         let assets = self
-            .asset_cache.clone()
+            .asset_cache
             .unwrap_or_else(|| AssetCache::new(runtime.clone()));
 
         let settings = SettingsKey.get(&assets);
@@ -328,7 +325,7 @@ impl AppBuilder {
         let (window, event_loop) = if self.headless.is_some() {
             (None, None)
         } else {
-            let event_loop: EventLoop<()> = self.event_loop.unwrap();
+            let event_loop = self.event_loop.unwrap_or_default();
             let window = WindowBuilder::new().with_inner_size(winit::dpi::LogicalSize {
                 width: settings.render.resolution().0,
                 height: settings.render.resolution().1,
@@ -352,18 +349,7 @@ impl AppBuilder {
             let window = Arc::new(window.build(&event_loop).unwrap());
             (Some(window), Some(event_loop))
         };
-        if let Some(event_loop) = event_loop{
-            event_loop.run(move |event, _, control_flow| {
-                match event.to_static(){
-                    Some(Event::Resumed)=>{
-                        *control_flow = ControlFlow::Exit;
-                    },
-                    _=>{}
-                }
-            });
-        }
-        
-        tracing::debug!("window is some {:?} event_loop is {:?}",window.is_some(),event_loop.is_some());
+
         let (cursor_lock_tx, cursor_lock_rx) = flume::unbounded::<bool>();
 
         // This isn't necessary on native
@@ -502,10 +488,70 @@ impl AppBuilder {
         let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max);
 
         let mut world = World::new("main_app", ambient_ecs::WorldContext::App);
-        let mut gpu_ = Gpu::init(window.as_deref(), true, &settings.render).await?;
-        gpu_.with_config(window.as_ref().unwrap(), &settings.render);
-        
-       
+        let gpu = Arc::new(Gpu::with_config(window.as_deref(), true, &settings.render).await?);
+
+        tracing::debug!("Inserting runtime");
+        RuntimeKey.insert(&assets, runtime.clone());
+        GpuKey.insert(&assets, gpu.clone());
+        // WindowKey.insert(&assets, window.clone());
+
+        tracing::debug!("Inserting app resources");
+        let (ctl_tx, ctl_rx) = self.ctl.unwrap_or_else(flume::unbounded);
+
+        let (window_physical_size, window_logical_size, window_scale_factor) =
+            if let Some(window) = window.as_ref() {
+                get_window_sizes(window)
+            } else {
+                let headless_size = self.headless.unwrap();
+                (headless_size, headless_size, 1.)
+            };
+
+        let app_resources = AppResources {
+            gpu: gpu.clone(),
+            runtime: runtime.clone(),
+            assets,
+            ctl_tx,
+            window_physical_size,
+            window_logical_size,
+            window_scale_factor,
+        };
+
+        let resources = world_instance_resources(app_resources);
+
+        world
+            .add_components(world.resource_entity(), resources)
+            .unwrap();
+        tracing::debug!("Setup renderers");
+        if self.ui_renderer || self.main_renderer {
+            // let _span = info_span!("setup_renderers").entered();
+            if !self.main_renderer {
+                tracing::debug!("Setting up UI renderer");
+                let renderer = Arc::new(Mutex::new(UiRenderer::new(&mut world)));
+                world.add_resource(ui_renderer(), renderer);
+            } else {
+                tracing::debug!("Setting up Main renderer");
+                let renderer =
+                    MainRenderer::new(&gpu, &mut world, self.ui_renderer, self.main_renderer);
+                tracing::debug!("Created main renderer");
+                let renderer = Arc::new(Mutex::new(renderer));
+                world.add_resource(main_renderer(), renderer);
+            }
+        }
+
+        tracing::debug!("Adding window event systems");
+
+        let mut window_event_systems = SystemGroup::new(
+            "window_event_systems",
+            vec![
+                Box::new(assets_camera_systems()),
+                Box::new(ambient_input::event_systems()),
+                Box::new(renderers::systems()),
+            ],
+        );
+        if self.examples_systems {
+            window_event_systems.add(Box::new(ExamplesSystem));
+        }
+
         Ok(App {
             window_focused: true,
             window,
@@ -519,20 +565,17 @@ impl AppBuilder {
                 ],
             ),
             world,
-            gpu_world_sync_systems: None,
-            window_event_systems:None,
+            gpu_world_sync_systems: gpu_world_sync_systems(gpu.clone()),
+            window_event_systems,
             event_loop,
-            gpu:gpu_,
-            ctl:None,
+
             fps: FpsCounter::new(),
-            render_settings:settings.render.clone(),
-            headless:None,
             #[cfg(feature = "profile")]
             _puffin: puffin_server,
             modifiers: Default::default(),
+            ctl_rx,
             current_time: Instant::now(),
             update_title_with_fps_stats: self.update_title_with_fps_stats,
-            asset_cache: self.asset_cache.clone(),
             #[cfg(target_os = "unknown")]
             _drop_handles: drop_handles,
 
@@ -545,7 +588,7 @@ impl AppBuilder {
     #[cfg(not(target_os = "unknown"))]
     pub fn block_on(self, init: impl for<'x> AsyncInit<'x>) {
         let rt = ambient_sys::task::make_native_multithreaded_runtime().unwrap();
-    
+
         rt.block_on(async move {
             let mut app = self.build().await.unwrap();
 
@@ -571,21 +614,18 @@ impl AppBuilder {
 
 pub struct App {
     pub world: World,
+    pub ctl_rx: flume::Receiver<WindowCtl>,
     pub systems: SystemGroup,
-    pub gpu: ambient_gpu::gpu::Gpu,
-    pub gpu_world_sync_systems: Option<SystemGroup<GpuWorldSyncEvent>>,
-    pub window_event_systems: Option<SystemGroup<Event<'static, ()>>>,
+    pub gpu_world_sync_systems: SystemGroup<GpuWorldSyncEvent>,
+    pub window_event_systems: SystemGroup<Event<'static, ()>>,
     pub runtime: RuntimeHandle,
     pub window: Option<Arc<Window>>,
-    pub render_settings: RenderSettings,
-    pub headless: Option<UVec2>,
-    pub ctl: Option<(flume::Sender<WindowCtl>, flume::Receiver<WindowCtl>)>,
     event_loop: Option<EventLoop<()>>,
     fps: FpsCounter,
     #[cfg(feature = "profile")]
     _puffin: Option<puffin_http::Server>,
     modifiers: ModifiersState,
-    asset_cache: Option<AssetCache>,
+
     window_focused: bool,
     update_title_with_fps_stats: bool,
     #[cfg(target_os = "unknown")]
@@ -601,7 +641,7 @@ impl std::fmt::Debug for App {
         let mut d = f.debug_struct("App");
         d.field("world", &self.world)
             .field("systems", &self.systems)
-            // .field("gpu_world_sync_systems", &self.gpu_world_sync_systems)
+            .field("gpu_world_sync_systems", &self.gpu_world_sync_systems)
             .field("window_event_systems", &self.window_event_systems)
             .field("runtime", &self.runtime)
             .field("window", &self.window)
@@ -675,11 +715,9 @@ impl App {
 
     pub fn run_blocking(mut self) -> ExitStatus {
         if let Some(event_loop) = self.event_loop.take() {
-            
             event_loop.run(move |event, _, control_flow| {
                 // HACK(philpax): treat dpi changes as resize events. Ideally we'd handle this in handle_event proper,
                 // but https://github.com/rust-windowing/winit/issues/1968 restricts us
-                tracing::debug!("event_loop");
                 if let Event::WindowEvent {
                     window_id,
                     event:
@@ -690,7 +728,6 @@ impl App {
                 } = &event
                 {
                     *self.world.resource_mut(window_scale_factor()) = *scale_factor;
-                    tracing::debug!("handle_static_event");
                     self.handle_static_event(
                         &Event::WindowEvent {
                             window_id: *window_id,
@@ -699,87 +736,6 @@ impl App {
                         control_flow,
                     );
                 } else if let Some(event) = event.to_static() {
-                    // if Event::Resumed == event{
-                    //     //*** */
-                    //     if let Some(window) = &self.window{
-                    //         self.gpu.with_config(&window,&self.render_settings);
-                    //     }
-                    //     let gpu = Arc::new(self.gpu.clone());
-                    //     tracing::debug!("Inserting runtime");
-                    //     let assets = self
-                    //     .asset_cache.clone()
-                    //     .unwrap_or_else(|| AssetCache::new(self.runtime.clone()));
-
-                    // let settings = SettingsKey.get(&assets);
-                    //     RuntimeKey.insert(&assets, self.runtime.clone());
-                    //     //GpuKey.insert(&assets, gpu.clone());
-                    //     //gpu.as_ref().with_config(window.as_ref().unwrap(), &settings.render);
-                    //     // WindowKey.insert(&assets, window.clone());
-
-                    //     tracing::debug!("Inserting app resources");
-                    //     let (ctl_tx, ctl_rx) = self.ctl.clone().unwrap_or_else(flume::unbounded);
-
-                    //     let (window_physical_size, window_logical_size, window_scale_factor) =
-                    //         if let Some(window) = self.window.as_ref() {
-                    //             get_window_sizes(window)
-                    //         } else {
-                    //             let headless_size = self.headless.unwrap();
-                    //             (headless_size, headless_size, 1.)
-                    //         };
-
-                    //     let app_resources = AppResources {
-                    //         gpu: gpu.clone(),
-                    //         runtime: self.runtime.clone(),
-                    //         assets,
-                    //         ctl_tx,
-                    //         window_physical_size,
-                    //         window_logical_size,
-                    //         window_scale_factor,
-                    //     };
-
-                    //     let resources: Entity = world_instance_resources(app_resources);
-
-                    //     self.world
-                    //         .add_components(self.world.resource_entity(), resources)
-                    //         .unwrap();
-                    //     tracing::debug!("Setup renderers");
-                        
-                    //     tracing::debug!("Setting up UI renderer");
-                    //     let renderer = Arc::new(Mutex::new(UiRenderer::new( &mut self.world)));
-                    //     self.world.add_resource(ui_renderer(), renderer);
-                       
-                    //     // if self.ui_renderer || self.main_renderer {
-                    //     //     // let _span = info_span!("setup_renderers").entered();
-                    //     //     if !self.main_renderer {
-                    //     //         tracing::debug!("Setting up UI renderer");
-                    //     //         let renderer = Arc::new(Mutex::new(UiRenderer::new(&mut world)));
-                    //     //         world.add_resource(ui_renderer(), renderer);
-                    //     //     } else {
-                    //     //         tracing::debug!("Setting up Main renderer");
-                    //     //         let renderer =
-                    //     //             MainRenderer::new(&gpu, &mut world, self.ui_renderer, self.main_renderer);
-                    //     //         tracing::debug!("Created main renderer");
-                    //     //         let renderer = Arc::new(Mutex::new(renderer));
-                    //     //         world.add_resource(main_renderer(), renderer);
-                    //     //     }
-                    //     // }
-
-                    //     tracing::debug!("Adding window event systems");
-
-                    //     let mut window_event_systems = SystemGroup::new(
-                    //         "window_event_systems",
-                    //         vec![
-                    //             Box::new(assets_camera_systems()),
-                    //             Box::new(ambient_input::event_systems()),
-                    //             Box::new(renderers::systems()),
-                    //         ],
-                    //     );
-                    //     if true {
-                    //         window_event_systems.add(Box::new(ExamplesSystem));
-                    //         self.window_event_systems = Some(window_event_systems);
-                    //     }
-                    //     return
-                    // }
                     self.handle_static_event(&event, control_flow);
                 }
             });
@@ -809,13 +765,13 @@ impl App {
         if !self.window_focused {
             *control_flow = ControlFlow::Wait;
         }
-        
+
         let world = &mut self.world;
         let systems = &mut self.systems;
+        let gpu_world_sync_systems = &mut self.gpu_world_sync_systems;
         world.resource(gpu()).device.poll(wgpu::Maintain::Poll);
-        if let Some(mut window_event_systems) = self.window_event_systems{
-            window_event_systems.run(world, event);
-        }
+
+        self.window_event_systems.run(world, event);
 
         match event {
             Event::MainEventsCleared => {
@@ -825,7 +781,7 @@ impl App {
                 tracing::trace!(?event, "event");
 
                 // Handle window control events
-                for v in self.ctl.unwrap().1.try_iter() {
+                for v in self.ctl_rx.try_iter() {
                     tracing::trace!(?v, "window control");
                     match v {
                         WindowCtl::GrabCursor(mode) => {
@@ -890,11 +846,8 @@ impl App {
 
                 {
                     profiling::scope!("systems");
-                    systems.run(world, &FrameEvent);        
-                    if let Some(gpu_world_sync_systems) = &self.gpu_world_sync_systems{
-                        gpu_world_sync_systems.run(world, &GpuWorldSyncEvent);
-                    }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
-                    
+                    systems.run(world, &FrameEvent);
+                    gpu_world_sync_systems.run(world, &GpuWorldSyncEvent);
                 }
 
                 if let Some(fps) = self.fps.frame_next() {
@@ -999,7 +952,6 @@ impl App {
                 }
                 _ => {}
             },
-            
             _ => {}
         }
         ExitStatus::SUCCESS

@@ -12,7 +12,6 @@ use ambient_gpu::{
 use ambient_native_std::{asset_cache::SyncAssetKeyExt, color::Color};
 use ambient_renderer::{renderer_stats, RenderTarget, Renderer, RendererConfig, RendererTarget};
 use ambient_ui_native::app_background_color;
-use winit::platform::android::activity::AndroidApp;
 use glam::{uvec2, UVec2};
 use parking_lot::Mutex;
 use tracing::info_span;
@@ -117,8 +116,7 @@ impl MainRenderer {
                     assets,
                     RendererConfig {
                         scene: main_scene(),
-                        //shadows: true,
-                        shadows:false,
+                        shadows: true,
                         ..Default::default()
                     },
                 );

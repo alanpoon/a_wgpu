@@ -16,7 +16,6 @@ use winit::{
     event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
     window::Window,
 };
-use winit::platform::android::activity::AndroidApp;
 
 async fn init(app: &mut App) {
     let world = &mut app.world;

@@ -339,10 +339,13 @@ impl AppBuilder {
         //     } else {
         //         window
         //     };
-            let event_loop = self.event_loop.unwrap_or_default();
-            let window = Window::new(&event_loop)?;
-            let event_loop = Some(event_loop);
-            let window = Some(Arc::new(window));
+        let event_loop = self.event_loop.unwrap_or_default();
+        let window = Window::new(&event_loop)?;
+        let (window_physical_size, window_logical_size, window_scale_factor) =
+        get_window_sizes(&window);
+        tracing::info!("window_physical_size {:?}window_logical_size {:?} window_scale_factor{:?} ",window_physical_size,window_logical_size,window_scale_factor);
+        let event_loop = Some(event_loop);
+        let window = Some(Arc::new(window));
             //let window = Arc::new(window.build(&event_loop).unwrap());
             //(Some(window), Some(event_loop))
         // };
@@ -488,6 +491,7 @@ impl AppBuilder {
         let gpu = Arc::new(Gpu::with_config(window.as_deref(), true).await?);
         let option_gpuc = Arc::new(Mutex::new(OptionGpu{surface:None,swapchain_format:None,swapchain_mode:None}));
         tracing::info!("Inserting runtime");
+        
         world.add_resource(option_gpu(), option_gpuc.clone());
         RuntimeKey.insert(&assets, runtime.clone());
         GpuKey.insert(&assets, gpu.clone());
@@ -504,9 +508,9 @@ impl AppBuilder {
             runtime: runtime.clone(),
             assets,
             ctl_tx,
-            window_physical_size: UVec2::ZERO,
-            window_logical_size: UVec2::ZERO,
-            window_scale_factor: 0.0,
+            window_physical_size: window_physical_size,
+            window_logical_size: window_logical_size,
+            window_scale_factor: window_scale_factor,
         };
 
         let resources = world_instance_resources(app_resources);
@@ -706,20 +710,18 @@ impl App {
                         tracing::info!("Event::Resumed");
                         let option_gpu = world.resource_mut(option_gpu()).clone();
                         let gpu = world.resource(gpu()).clone();
-                        let (window_physical_size, window_logical_size, window_scale_factor) =
-                        if let Some(window) = self.window.as_ref() {
-                            get_window_sizes(window)
-                        } else {
-                            (UVec2::ZERO, UVec2::ZERO, 1.)
-                        };
-                        tracing::info!("app_resources wind physical size {:?}, window_logical_size {:?} window_scale_factor {:?}",window_physical_size,window_logical_size,window_scale_factor);
-                        let window_physical_size= UVec2{
-                            x:256,
-                            y:256
-                        };
-                        *world.resource_mut(ambient_core::window::window_physical_size()) = window_physical_size;
-                        *world.resource_mut(ambient_core::window::window_logical_size()) = window_logical_size;
-                        *world.resource_mut(ambient_core::window::window_scale_factor()) = window_scale_factor;
+                        tracing::info!("settings {:?}",self.settings);
+                        // let (window_physical_size, window_logical_size, window_scale_factor) =
+                        // if let Some(window) = self.window.as_ref() {
+                        //     get_window_sizes(window)
+                        // } else {
+                        //     (UVec2::ZERO, UVec2::ZERO, 1.)
+                        // };
+                        // tracing::info!("app_resources wind physical size {:?}, window_logical_size {:?} window_scale_factor {:?}",window_physical_size,window_logical_size,window_scale_factor);
+                       
+                        // *world.resource_mut(ambient_core::window::window_physical_size()) = window_physical_size;
+                        // *world.resource_mut(ambient_core::window::window_logical_size()) = window_logical_size;
+                        // *world.resource_mut(ambient_core::window::window_scale_factor()) = window_scale_factor;
                         option_gpu.lock().set(self.window.as_deref(), &gpu.device, &gpu.adapter, &gpu.instance, &self.settings);
                         tracing::info!("Setup renderers");
                         let ui_renderer_boolean = true;
@@ -741,8 +743,10 @@ impl App {
                         }
                         
                     }
-                    return
+                    
                 }else{
+                    tracing::info!("Event::WindowEvent handle_static_event");
+
                     if let Event::WindowEvent {
                         window_id,
                         event:
@@ -753,15 +757,15 @@ impl App {
                     } = &event
                     {
                         *self.world.resource_mut(window_scale_factor()) = *scale_factor;
-                        // self.handle_static_event(
-                        //     &Event::WindowEvent {
-                        //         window_id: *window_id,
-                        //         event: WindowEvent::Resized(**new_inner_size),
-                        //     },
-                        //     control_flow,
-                        // );
+                        self.handle_static_event(
+                            &Event::WindowEvent {
+                                window_id: *window_id,
+                                event: WindowEvent::Resized(**new_inner_size),
+                            },
+                            control_flow,
+                        );
                     } else if let Some(event) = event.to_static() {
-                       // self.handle_static_event(&event, control_flow);
+                       self.handle_static_event(&event, control_flow);
                     }
                 }
                 

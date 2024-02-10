@@ -7,3 +7,6 @@ cargo ndk -t arm64-v8a -o app/src/main/jniLibs/ build
             .arg("-U")
             .arg(&self.package_name);
 
+
+
+cargo

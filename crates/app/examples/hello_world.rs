@@ -31,6 +31,8 @@ async fn init(app: &mut App) {
 }
 
 fn main() {
+    env_logger::init();
     // wgpu_subscriber::initialize_default_subscriber(None);
     AppBuilder::simple().block_on(init);
 }
+//RUST_LOG=info cargo run --example hello_world --target=aarch64-apple-darwin
