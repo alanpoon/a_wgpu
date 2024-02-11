@@ -1,6 +1,6 @@
 //use crate::run_blocker::AppWrapper;
 
-use super::{App, AppBuilder};
+use super::{App, AppBuilder,AppWrapper};
 use ambient_core::{
     camera::active_camera,
     main_scene,
@@ -41,6 +41,7 @@ use crate::AsyncInit;
 pub fn run(mut event_loop: EventLoop<()>) {
    
     // wgpu_subscriber::initialize_default_subscriber(None);
-    AppBuilder::simple_dual().with_event_loop(event_loop).block_on(init);
+    //AppBuilder::simple_dual().with_event_loop(event_loop).block_on(init);
     //AppWrapper::new(init).run_blocking(event_loop);
+    AppWrapper::new_with_event_loop(event_loop).run_blocking(init);
 }

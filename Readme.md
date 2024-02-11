@@ -9,4 +9,4 @@ cargo ndk -t arm64-v8a -o app/src/main/jniLibs/ build
 
 
 
-cargo
+RUSTFLAG=INFO cargo run --example hello_world --target=aarch64-apple-darwin

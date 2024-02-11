@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use ambient_core::{asset_cache, gpu, main_scene, option_gpu, ui_scene, window::window_physical_size};
+use ambient_core::{asset_cache, gpu, main_scene, ui_scene, window::window_physical_size};
 use ambient_ecs::{components, query, FrameEvent, System, SystemGroup, World};
 use ambient_gizmos::render::GizmoRenderer;
 use ambient_gpu::{
     blit::{Blitter, BlitterKey},
-    gpu::{Gpu,OptionGpu},
+    gpu::Gpu,
     shader_module::DEPTH_FORMAT,
     texture::{Texture, TextureView},
 };
@@ -32,7 +32,6 @@ pub fn systems() -> SystemGroup<Event<'static, ()>> {
         vec![
             query(ui_renderer()).to_system(|q, world, qs, event| {
                 let gpu = world.resource(gpu()).clone();
-                let option_gpu = world.resource_mut(option_gpu()).clone();
                 for (_, ui_render) in q.collect_cloned(world, qs) {
                     let mut ui_render = ui_render.lock();
                     match &event {
@@ -50,20 +49,19 @@ pub fn systems() -> SystemGroup<Event<'static, ()>> {
                     }
                     let cleared = matches!(event, Event::MainEventsCleared);
                     if cleared {
-                        ui_render.render(&gpu,&option_gpu, world);
+                        ui_render.render(&gpu, world);
                     }
                 }
             }),
             query(main_renderer()).to_system(|q, world, qs, event| {
                 let gpu = world.resource(gpu()).clone();
-                let option_gpu = world.resource_mut(option_gpu()).clone();
                 for (_, main_renderer) in q.collect_cloned(world, qs) {
                     let mut main_renderer = main_renderer.lock();
                     match event {
                         Event::WindowEvent {
                             event: WindowEvent::Resized(size),
                             ..
-                        } => main_renderer.resize(&gpu,&option_gpu, size),
+                        } => main_renderer.resize(&gpu, size),
                         Event::MainEventsCleared => {
                             main_renderer.run(world, &FrameEvent);
                         }
@@ -84,19 +82,19 @@ pub struct MainRenderer {
 }
 
 impl MainRenderer {
-    pub fn new(gpu: &Gpu, option_gpu:&Mutex<OptionGpu>,world: &mut World, ui: bool, main: bool) -> Self {
+    pub fn new(gpu: &Gpu, world: &mut World, ui: bool, main: bool) -> Self {
         world
             .add_component(world.resource_entity(), renderer_stats(), "".to_string())
             .unwrap();
         let assets = world.resource(asset_cache());
         let wind_size = *world.resource(ambient_core::window::window_physical_size());
 
-        tracing::debug!("Creating render target option_gpu {:?} wind_size{:?}",option_gpu.lock(),wind_size);
-        let render_target = RenderTarget::new(gpu, option_gpu,wind_size, None);
+        tracing::debug!("Creating render target");
+        let render_target = RenderTarget::new(gpu, wind_size, None);
 
         tracing::debug!("Creating self");
 
-        let is_srgb = option_gpu.lock().swapchain_format().is_srgb();
+        let is_srgb = gpu.swapchain_format().is_srgb();
         let gamma_correction = if !is_srgb {
             tracing::debug!(
                 "Output format is not in sRGB colorspace. Applying manual gamma correction."
@@ -105,14 +103,12 @@ impl MainRenderer {
         } else {
             None
         };
-        tracing::info!("tracing main {:?}",main);
 
         Self {
             main: if main {
-                tracing::info!("Creating renderer");
+                tracing::debug!("Creating renderer");
                 let mut renderer = Renderer::new(
                     gpu,
-                    option_gpu,
                     assets,
                     RendererConfig {
                         scene: main_scene(),
@@ -121,18 +117,15 @@ impl MainRenderer {
                     },
                 );
 
-                tracing::info!("Creating gizmo renderer");
+                tracing::debug!("Creating gizmo renderer");
                 renderer.post_transparent = Some(Box::new(GizmoRenderer::new(gpu, assets)));
                 Some(renderer)
             } else {
                 None
             },
             ui: if ui {
-                tracing::info!("Creating UI renderer");
-
                 Some(Renderer::new(
                     gpu,
-                    option_gpu,
                     assets,
                     RendererConfig {
                         scene: ui_scene(),
@@ -144,7 +137,7 @@ impl MainRenderer {
                 None
             },
             blit: BlitterKey {
-                format: option_gpu.lock().swapchain_format().into(),
+                format: gpu.swapchain_format().into(),
                 min_filter: FilterMode::Nearest,
                 gamma_correction,
             }
@@ -153,11 +146,11 @@ impl MainRenderer {
             size: wind_size,
         }
     }
-    fn resize(&mut self, gpu: &Gpu,option_gpu:&Mutex<OptionGpu>, size: &PhysicalSize<u32>) {
+    fn resize(&mut self, gpu: &Gpu, size: &PhysicalSize<u32>) {
         self.size = uvec2(size.width, size.height);
 
         if size.width > 0 && size.height > 0 {
-            self.render_target = RenderTarget::new(gpu, option_gpu,uvec2(size.width, size.height), None);
+            self.render_target = RenderTarget::new(gpu, uvec2(size.width, size.height), None);
         }
     }
 
@@ -205,7 +198,6 @@ impl System for MainRenderer {
     fn run(&mut self, world: &mut World, _: &FrameEvent) {
         profiling::scope!("Renderers.run");
         let gpu = world.resource(gpu()).clone();
-        let option_gpu = world.resource(option_gpu()).clone();
         let mut encoder = gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -215,7 +207,6 @@ impl System for MainRenderer {
             profiling::scope!("Main");
             main.render(
                 &gpu,
-                &option_gpu,
                 world,
                 &mut encoder,
                 &mut post_submit,
@@ -229,7 +220,6 @@ impl System for MainRenderer {
             profiling::scope!("UI");
             ui.render(
                 &gpu,
-                &option_gpu,
                 world,
                 &mut encoder,
                 &mut post_submit,
@@ -242,7 +232,7 @@ impl System for MainRenderer {
             );
         }
 
-        if let Some(surface) = &option_gpu.lock().surface {
+        if let Some(surface) = &gpu.surface {
             if self.size.x > 0 && self.size.y > 0 {
                 let frame = {
                     profiling::scope!("Get swapchain texture");
@@ -251,11 +241,10 @@ impl System for MainRenderer {
                         // Reconfigure the surface if lost
                         Err(wgpu::SurfaceError::Lost) => {
                             tracing::warn!("Surface lost");
-                            option_gpu.lock().resize(PhysicalSize {
+                            gpu.resize(PhysicalSize {
                                 width: self.size.x,
                                 height: self.size.y,
-                                
-                            },&gpu.device);
+                            });
                             return;
                         }
                         // The system is out of memory, we should probably quit
@@ -316,7 +305,6 @@ impl UiRenderer {
     pub fn new(world: &mut World) -> Self {
         let assets = world.resource(asset_cache());
         let gpu = world.resource(gpu()).clone();
-        let option_gpu = world.resource(option_gpu()).clone();
         let size = *world.resource(window_physical_size());
 
         let depth_buffer = Arc::new(Self::create_depth_buffer(
@@ -345,7 +333,6 @@ impl UiRenderer {
 
         let mut ui_renderer = Renderer::new(
             &gpu,
-            &option_gpu,
             assets,
             RendererConfig {
                 scene: ui_scene(),
@@ -388,7 +375,7 @@ impl UiRenderer {
         self.depth_buffer_view = Arc::new(depth_buffer.create_view(&Default::default()));
     }
 
-    fn render(&mut self, gpu: &Gpu, option_gpu:&Mutex<OptionGpu>,world: &mut World) {
+    fn render(&mut self, gpu: &Gpu, world: &mut World) {
         let _span = info_span!("UIRender.render").entered();
         let mut encoder = gpu
             .device
@@ -397,7 +384,7 @@ impl UiRenderer {
             });
         let frame = {
             profiling::scope!("Get swapchain texture");
-            option_gpu.lock().surface
+            gpu.surface
                 .as_ref()
                 .unwrap()
                 .get_current_texture()
@@ -412,7 +399,6 @@ impl UiRenderer {
 
         self.ui_renderer.render(
             gpu,
-            option_gpu,
             world,
             &mut encoder,
             &mut post_submit,

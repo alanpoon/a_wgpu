@@ -7,7 +7,7 @@ use winit::platform::android::EventLoopBuilderExtAndroid;
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_min_level(log::Level::Debug));
+    android_logger::init_once(android_logger::Config::default().with_min_level(log::Level::Info));
    
     let event_loop: EventLoop<()> = EventLoopBuilder::new()
         .with_android_app(app)

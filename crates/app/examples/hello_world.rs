@@ -1,4 +1,4 @@
-use ambient_app::{App, AppBuilder};
+use ambient_app::{App, AppBuilder,AppWrapper};
 use ambient_core::{
     camera::active_camera,
     main_scene,
@@ -33,6 +33,9 @@ async fn init(app: &mut App) {
 fn main() {
     env_logger::init();
     // wgpu_subscriber::initialize_default_subscriber(None);
-    AppBuilder::simple().block_on(init);
+    //AppBuilder::simple().block_on(init);
+    AppWrapper::new().run_blocking(init);
+    //AppWrapper::new().block_on(init);
+   //AppBuilder::
 }
 //RUST_LOG=info cargo run --example hello_world --target=aarch64-apple-darwin

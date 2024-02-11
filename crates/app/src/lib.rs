@@ -3,10 +3,18 @@ use std::{future::Future, sync::Arc, time::Duration};
 use ambient_cameras::assets_camera_systems;
 pub use ambient_core::gpu;
 use ambient_core::{
-    asset_cache, async_ecs::async_ecs_systems, bounding::bounding_systems, camera::camera_systems, frame_index, hierarchy::dump_world_hierarchy_to_user, name, option_gpu, performance_samples, refcount_system, remove_at_time_system, runtime, transform::TransformSystem, window::{
-        cursor_position, get_window_sizes, window_logical_size, window_physical_size,
-        window_scale_factor, ExitStatus, WindowCtl,
-    }, ClientTimeResourcesSystem, PerformanceSample, RuntimeKey
+    asset_cache,
+    async_ecs::async_ecs_systems,
+    bounding::bounding_systems,
+    camera::camera_systems,
+    frame_index,
+    hierarchy::dump_world_hierarchy_to_user,
+    name, performance_samples, refcount_system, remove_at_time_system, runtime,
+    transform::TransformSystem,
+    window::{
+        self, cursor_position, get_window_sizes, window_logical_size, window_physical_size, window_scale_factor, ExitStatus, WindowCtl
+    },
+    ClientTimeResourcesSystem, PerformanceSample, RuntimeKey,
 };
 use ambient_ecs::{
     components, generated::ui::components::focus, world_events, Debuggable, DynSystem, Entity,
@@ -15,7 +23,7 @@ use ambient_ecs::{
 use ambient_element::ambient_system;
 use ambient_gizmos::{gizmos, Gizmos};
 use ambient_gpu::{
-    gpu::{Gpu, GpuKey,OptionGpu,OptionGpuKey},
+    gpu::{Gpu, GpuKey},
     mesh_buffer::MeshBufferKey,
 };
 use ambient_gpu_ecs::{gpu_world, GpuWorld, GpuWorldSyncEvent, GpuWorldUpdate};
@@ -25,7 +33,7 @@ use ambient_native_std::{
 };
 use ambient_procedurals::{procedural_storage, ProceduralStorage};
 use ambient_renderer::lod::lod_system;
-use ambient_settings::{RenderSettings,SettingsKey};
+use ambient_settings::SettingsKey;
 use ambient_sys::{task::RuntimeHandle, time::Instant};
 
 use glam::{uvec2, vec2, IVec2, UVec2, Vec2};
@@ -35,7 +43,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, Event, KeyboardInput, ModifiersState, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{self, CursorGrabMode, Fullscreen, Window, WindowBuilder},
+    window::{CursorGrabMode, Fullscreen, Window, WindowBuilder},
 };
 
 mod renderers;
@@ -121,7 +129,6 @@ pub fn world_instance_systems(full: bool) -> SystemGroup {
 pub struct AppResources {
     pub assets: AssetCache,
     pub gpu: Arc<Gpu>,
-    pub option_gpu: Arc<Mutex<OptionGpu>>,
     pub runtime: RuntimeHandle,
     pub ctl_tx: flume::Sender<WindowCtl>,
     window_physical_size: UVec2,
@@ -134,7 +141,6 @@ impl AppResources {
         Self {
             assets: world.resource(self::asset_cache()).clone(),
             gpu: world.resource(self::gpu()).clone(),
-            option_gpu: world.resource(self::option_gpu()).clone(),
             runtime: world.resource(self::runtime()).clone(),
             ctl_tx: world.resource(ambient_core::window::window_ctl()).clone(),
             window_physical_size: *world.resource(ambient_core::window::window_physical_size()),
@@ -303,8 +309,8 @@ impl AppBuilder {
 
         self
     }
-
-    pub async fn build(self) -> anyhow::Result<App> {
+    
+    pub async fn build(self,window:Option<Arc<Window>>) -> anyhow::Result<App> {
         crate::init_all_components();
 
         let runtime = RuntimeHandle::current();
@@ -318,7 +324,7 @@ impl AppBuilder {
         // let (window, event_loop) = if self.headless.is_some() {
         //     (None, None)
         // } else {
-        //     let event_loop = self.event_loop.unwrap_or_default();
+        //     //let event_loop = self.event_loop.unwrap_or_default();
         //     let window = WindowBuilder::new().with_inner_size(winit::dpi::LogicalSize {
         //         width: settings.render.resolution().0,
         //         height: settings.render.resolution().1,
@@ -339,17 +345,10 @@ impl AppBuilder {
         //     } else {
         //         window
         //     };
-        let event_loop = self.event_loop.unwrap_or_default();
-        let window = Window::new(&event_loop)?;
-        let (window_physical_size, window_logical_size, window_scale_factor) =
-        get_window_sizes(&window);
-        tracing::info!("window_physical_size {:?}window_logical_size {:?} window_scale_factor{:?} ",window_physical_size,window_logical_size,window_scale_factor);
-        let event_loop = Some(event_loop);
-        let window = Some(Arc::new(window));
-            //let window = Arc::new(window.build(&event_loop).unwrap());
-            //(Some(window), Some(event_loop))
+        //     let window = Arc::new(window.build(&event_loop).unwrap());
+        //     (Some(window), Some(event_loop))
         // };
-
+        
         let (cursor_lock_tx, cursor_lock_rx) = flume::unbounded::<bool>();
 
         // This isn't necessary on native
@@ -473,7 +472,7 @@ impl AppBuilder {
             );
             match puffin_http::Server::new(&puffin_addr) {
                 Ok(server) => {
-                    tracing::info!("Puffin server running on {}", puffin_addr);
+                    tracing::debug!("Puffin server running on {}", puffin_addr);
                     puffin::set_scopes_on(true);
                     Some(server)
                 }
@@ -488,29 +487,33 @@ impl AppBuilder {
         let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max);
 
         let mut world = World::new("main_app", ambient_ecs::WorldContext::App);
-        let gpu = Arc::new(Gpu::with_config(window.as_deref(), true).await?);
-        let option_gpuc = Arc::new(Mutex::new(OptionGpu{surface:None,swapchain_format:None,swapchain_mode:None}));
-        tracing::info!("Inserting runtime");
-        
-        world.add_resource(option_gpu(), option_gpuc.clone());
+        let gpu = Arc::new(Gpu::with_config(window.as_deref(), true, &settings.render).await?);
+        tracing::info!("settings {:?}",settings);
+
+        tracing::debug!("Inserting runtime");
         RuntimeKey.insert(&assets, runtime.clone());
         GpuKey.insert(&assets, gpu.clone());
-        //OptionGpuKey.insert(&assets, option_gpuc.clone());
         // WindowKey.insert(&assets, window.clone());
 
-        tracing::info!("Inserting app resources");
+        tracing::debug!("Inserting app resources");
         let (ctl_tx, ctl_rx) = self.ctl.unwrap_or_else(flume::unbounded);
 
-       
+        let (window_physical_size, window_logical_size, window_scale_factor) =
+            if let Some(window) = window.as_ref() {
+                get_window_sizes(window)
+            } else {
+                let headless_size = self.headless.unwrap();
+                (headless_size, headless_size, 1.)
+            };
+        tracing::info!("window_physical_size {:?},window_logical_size {:?}.{:?}",window_physical_size,window_logical_size,window_scale_factor);
         let app_resources = AppResources {
             gpu: gpu.clone(),
-            option_gpu:option_gpuc.clone(),
             runtime: runtime.clone(),
             assets,
             ctl_tx,
-            window_physical_size: window_physical_size,
-            window_logical_size: window_logical_size,
-            window_scale_factor: window_scale_factor,
+            window_physical_size,
+            window_logical_size,
+            window_scale_factor,
         };
 
         let resources = world_instance_resources(app_resources);
@@ -518,9 +521,24 @@ impl AppBuilder {
         world
             .add_components(world.resource_entity(), resources)
             .unwrap();
-        
+        tracing::debug!("Setup renderers");
+        if self.ui_renderer || self.main_renderer {
+            // let _span = info_span!("setup_renderers").entered();
+            if !self.main_renderer {
+                tracing::debug!("Setting up UI renderer");
+                let renderer = Arc::new(Mutex::new(UiRenderer::new(&mut world)));
+                world.add_resource(ui_renderer(), renderer);
+            } else {
+                tracing::debug!("Setting up Main renderer");
+                let renderer =
+                    MainRenderer::new(&gpu, &mut world, self.ui_renderer, self.main_renderer);
+                tracing::debug!("Created main renderer");
+                let renderer = Arc::new(Mutex::new(renderer));
+                world.add_resource(main_renderer(), renderer);
+            }
+        }
 
-        tracing::info!("Adding window event systems");
+        tracing::debug!("Adding window event systems");
 
         let mut window_event_systems = SystemGroup::new(
             "window_event_systems",
@@ -549,10 +567,9 @@ impl AppBuilder {
             world,
             gpu_world_sync_systems: gpu_world_sync_systems(gpu.clone()),
             window_event_systems,
-            event_loop,
-            settings:settings.render,
+            //event_loop,
+
             fps: FpsCounter::new(),
-            resumed:false,
             #[cfg(feature = "profile")]
             _puffin: puffin_server,
             modifiers: Default::default(),
@@ -567,34 +584,124 @@ impl AppBuilder {
         })
     }
 
-    /// Runs the app by blocking the main thread
-    #[cfg(not(target_os = "unknown"))]
-    pub fn block_on(self, init: impl for<'x> AsyncInit<'x>) {
-        let rt = ambient_sys::task::make_native_multithreaded_runtime().unwrap();
+    // Runs the app by blocking the main thread
+    // #[cfg(not(target_os = "unknown"))]
+    // pub fn block_on(self, init: impl for<'x> AsyncInit<'x>) {
+    //     let rt = ambient_sys::task::make_native_multithreaded_runtime().unwrap();
 
-        rt.block_on(async move {
-            let mut app = self.build().await.unwrap();
+    //     rt.block_on(async move {
+    //         let mut app = self.build().await.unwrap();
 
-            init.call(&mut app).await;
+    //         init.call(&mut app).await;
 
-            app.run_blocking();
-        });
-    }
+    //         app.run_blocking();
+    //     });
+    // }
+   
+    // Finalizes the app and enters the main loop
+    // pub async fn run(self, init: impl FnOnce(&mut App, RuntimeHandle)) -> ExitStatus {
+    //     let mut app = self.build().await.unwrap();
+    //     let runtime = app.runtime.clone();
+    //     init(&mut app, runtime);
+    //     app.run_blocking()
+    // }
 
-    /// Finalizes the app and enters the main loop
-    pub async fn run(self, init: impl FnOnce(&mut App, RuntimeHandle)) -> ExitStatus {
-        let mut app = self.build().await.unwrap();
-        let runtime = app.runtime.clone();
-        init(&mut app, runtime);
-        app.run_blocking()
-    }
-
-    #[inline]
-    pub async fn run_world(self, init: impl FnOnce(&mut World)) -> ExitStatus {
-        self.run(|app, _| init(&mut app.world)).await
-    }
+    // #[inline]
+    // pub async fn run_world(self, init: impl FnOnce(&mut World)) -> ExitStatus {
+    //     self.run(|app, _| init(&mut app.world)).await
+    // }
+}
+pub struct AppWrapper{
+    pub app : Arc<Mutex<Option<App>>>,
+    pub event_loop: Option<EventLoop<()>>,
+    pub window: Option<Arc<Window>>,
 }
 
+impl AppWrapper{
+    pub fn new()->AppWrapper{
+        let event_loop = EventLoop::new();
+        let window = WindowBuilder::new().with_inner_size(winit::dpi::LogicalSize {
+            width: 1200,
+            height: 800,
+        });
+        let window = window.build(&event_loop).unwrap();
+        AppWrapper{
+            app:Arc::new(Mutex::new(None)),
+            event_loop:Some(event_loop),
+            window:Some(Arc::new(window)),
+        }
+    }
+    pub fn new_with_event_loop(event_loop:EventLoop<()>)->AppWrapper{
+        let window = WindowBuilder::new().with_inner_size(winit::dpi::LogicalSize {
+            width: 1200,
+            height: 800,
+        });
+        let window = window.build(&event_loop).unwrap();
+        AppWrapper{
+            app:Arc::new(Mutex::new(None)),
+            event_loop:Some(event_loop),
+            window:Some(Arc::new(window)),
+        }
+    }
+    pub fn run_blocking(mut self,init: impl for<'x> AsyncInit<'x>  +Copy+ 'static) {
+        if let Some(event_loop) = self.event_loop.take() {
+            event_loop.run(move |event, _, control_flow| {
+                // HACK(philpax): treat dpi changes as resize events. Ideally we'd handle this in handle_event proper,
+                // but https://github.com/rust-windowing/winit/issues/1968 restricts us
+                if let Event::Resumed = event{
+                    tracing::info!("Event::Resumed");
+                    let rt = ambient_sys::task::make_native_multithreaded_runtime().unwrap();
+                    let window = self.window.clone();
+                    let app_ = self.app.clone();
+                    rt.block_on(async move {
+                        let mut app = AppBuilder::simple().build(window).await.unwrap();
+                        
+                        init.call(&mut app).await;
+                        *app_.lock() = Some(app);
+                    });
+                }else{
+                    let app_ = self.app.clone();
+                    let mut app_ = app_.lock();
+                    if let Some(ref mut app) = *app_{
+                        if let Event::WindowEvent {
+                            window_id,
+                            event:
+                                WindowEvent::ScaleFactorChanged {
+                                    new_inner_size,
+                                    scale_factor,
+                                },
+                        } = &event
+                        {
+                            
+                            *app.world.resource_mut(window_scale_factor()) = *scale_factor;
+                            app.handle_static_event(
+                                &Event::WindowEvent {
+                                    window_id: *window_id,
+                                    event: WindowEvent::Resized(**new_inner_size),
+                                },
+                                control_flow,
+                            );
+                        } else if let Some(event) = event.to_static() {
+                            app.handle_static_event(&event, control_flow);
+                        }
+                    }
+                    
+                }
+                
+            });
+        } else {
+            // Fake event loop in headless mode
+            loop {
+                let mut control_flow = ControlFlow::default();
+                //let exit_status =
+                    //self.handle_static_event(&Event::MainEventsCleared, &mut control_flow);
+                if control_flow == ControlFlow::Exit {
+                    //return exit_status;
+                }
+            }
+        }
+    }
+}
 pub struct App {
     pub world: World,
     pub ctl_rx: flume::Receiver<WindowCtl>,
@@ -603,9 +710,7 @@ pub struct App {
     pub window_event_systems: SystemGroup<Event<'static, ()>>,
     pub runtime: RuntimeHandle,
     pub window: Option<Arc<Window>>,
-    pub settings: RenderSettings,
-    pub resumed: bool,
-    event_loop: Option<EventLoop<()>>,
+    //event_loop: Option<EventLoop<()>>,
     fps: FpsCounter,
     #[cfg(feature = "profile")]
     _puffin: Option<puffin_http::Server>,
@@ -652,7 +757,7 @@ impl App {
 
         let event_loop = self.event_loop.take().unwrap();
 
-        tracing::info!("Spawning event loop");
+        tracing::debug!("Spawning event loop");
         event_loop.spawn(move |event, _, control_flow| {
             // HACK(philpax): hackfix for https://github.com/AmbientRun/Ambient/issues/923
             // remove after https://github.com/AmbientRun/Ambient/issues/1096
@@ -698,90 +803,60 @@ impl App {
         });
     }
 
-    pub fn run_blocking(mut self) -> ExitStatus {
-        if let Some(event_loop) = self.event_loop.take() {
-            event_loop.run(move |event, _, control_flow| {
-                // HACK(philpax): treat dpi changes as resize events. Ideally we'd handle this in handle_event proper,
-                // but https://github.com/rust-windowing/winit/issues/1968 restricts us
-                if let Event::Resumed= event{
-                    let mut world: &mut World = &mut self.world;
-                    if !self.resumed{
-                        self.resumed = true;
-                        tracing::info!("Event::Resumed");
-                        let option_gpu = world.resource_mut(option_gpu()).clone();
-                        let gpu = world.resource(gpu()).clone();
-                        tracing::info!("settings {:?}",self.settings);
-                        // let (window_physical_size, window_logical_size, window_scale_factor) =
-                        // if let Some(window) = self.window.as_ref() {
-                        //     get_window_sizes(window)
-                        // } else {
-                        //     (UVec2::ZERO, UVec2::ZERO, 1.)
-                        // };
-                        // tracing::info!("app_resources wind physical size {:?}, window_logical_size {:?} window_scale_factor {:?}",window_physical_size,window_logical_size,window_scale_factor);
-                       
-                        // *world.resource_mut(ambient_core::window::window_physical_size()) = window_physical_size;
-                        // *world.resource_mut(ambient_core::window::window_logical_size()) = window_logical_size;
-                        // *world.resource_mut(ambient_core::window::window_scale_factor()) = window_scale_factor;
-                        option_gpu.lock().set(self.window.as_deref(), &gpu.device, &gpu.adapter, &gpu.instance, &self.settings);
-                        tracing::info!("Setup renderers");
-                        let ui_renderer_boolean = true;
-                        let main_renderer_boolean  =true;
-                        if ui_renderer_boolean || main_renderer_boolean {
-                            // let _span = info_span!("setup_renderers").entered();
-                            if !main_renderer_boolean {
-                                tracing::info!("Setting up UI renderer");
-                                let renderer = Arc::new(Mutex::new(UiRenderer::new(&mut world)));
-                                world.add_resource(ui_renderer(), renderer);
-                            } else {
-                                tracing::info!("Setting up Main renderer");
-                                let renderer =
-                                    MainRenderer::new(&gpu,&option_gpu, &mut world, ui_renderer_boolean, main_renderer_boolean);
-                                tracing::info!("Created main renderer");
-                                let renderer = Arc::new(Mutex::new(renderer));
-                                world.add_resource(main_renderer(), renderer);
-                            }
-                        }
+    // pub fn run_blocking(mut self,init: impl for<'x> AsyncInit<'x>) -> ExitStatus {
+    //     if let Some(event_loop) = self.event_loop.take() {
+    //         let init_c = Arc::new(Box::new(init));
+    //         event_loop.run(move |event, _, control_flow| {
+    //             // HACK(philpax): treat dpi changes as resize events. Ideally we'd handle this in handle_event proper,
+    //             // but https://github.com/rust-windowing/winit/issues/1968 restricts us
+    //             if let Event::Resumed = event{
+    //                 let rt = ambient_sys::task::make_native_multithreaded_runtime().unwrap();
+    //                 let app_ = Arc::new(Mutex::new(None));
+    //                 let app_c = app_.clone();
+    //                 let init_c = init_c.clone();
+    //                 rt.block_on(async move {
+    //                     let mut app = AppBuilder::simple().build().await.unwrap();
+    //                     *app_c.lock() = Some(app);
                         
-                    }
-                    
-                }else{
-                    tracing::info!("Event::WindowEvent handle_static_event");
-
-                    if let Event::WindowEvent {
-                        window_id,
-                        event:
-                            WindowEvent::ScaleFactorChanged {
-                                new_inner_size,
-                                scale_factor,
-                            },
-                    } = &event
-                    {
-                        *self.world.resource_mut(window_scale_factor()) = *scale_factor;
-                        self.handle_static_event(
-                            &Event::WindowEvent {
-                                window_id: *window_id,
-                                event: WindowEvent::Resized(**new_inner_size),
-                            },
-                            control_flow,
-                        );
-                    } else if let Some(event) = event.to_static() {
-                       self.handle_static_event(&event, control_flow);
-                    }
-                }
+    //                 });
+    //                 let app =app_.lock();
+    //                 //init.call(app).await;
+    //             }else{
+    //                 if let Event::WindowEvent {
+    //                     window_id,
+    //                     event:
+    //                         WindowEvent::ScaleFactorChanged {
+    //                             new_inner_size,
+    //                             scale_factor,
+    //                         },
+    //                 } = &event
+    //                 {
+    //                     *self.world.resource_mut(window_scale_factor()) = *scale_factor;
+    //                     self.handle_static_event(
+    //                         &Event::WindowEvent {
+    //                             window_id: *window_id,
+    //                             event: WindowEvent::Resized(**new_inner_size),
+    //                         },
+    //                         control_flow,
+    //                     );
+    //                 } else if let Some(event) = event.to_static() {
+    //                     self.handle_static_event(&event, control_flow);
+    //                 }
+    //             }
                 
-            });
-        } else {
-            // Fake event loop in headless mode
-            loop {
-                let mut control_flow = ControlFlow::default();
-                let exit_status =
-                    self.handle_static_event(&Event::MainEventsCleared, &mut control_flow);
-                if control_flow == ControlFlow::Exit {
-                    return exit_status;
-                }
-            }
-        }
-    }
+    //         });
+    //     } else {
+    //         // Fake event loop in headless mode
+    //         loop {
+    //             let mut control_flow = ControlFlow::default();
+    //             let exit_status =
+    //                 self.handle_static_event(&Event::MainEventsCleared, &mut control_flow);
+    //             if control_flow == ControlFlow::Exit {
+    //                 return exit_status;
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn handle_static_event(
         &mut self,
@@ -796,9 +871,8 @@ impl App {
         if !self.window_focused {
             *control_flow = ControlFlow::Wait;
         }
-        let mut world: &mut World = &mut self.world;
-        
-        
+
+        let world = &mut self.world;
         let systems = &mut self.systems;
         let gpu_world_sync_systems = &mut self.gpu_world_sync_systems;
         world.resource(gpu()).device.poll(wgpu::Maintain::Poll);
@@ -906,7 +980,7 @@ impl App {
 
                 let frame_time = frame_end.duration_since(self.current_time);
 
-                tracing::info!(?external_time, ?frame_time, "frame time");
+                tracing::debug!(?external_time, ?frame_time, "frame time");
                 self.current_time = frame_end;
 
                 let samples = world.resource_mut(performance_samples());
@@ -931,10 +1005,8 @@ impl App {
                     *self.world.resource_mut(window_scale_factor()) = *scale_factor;
                 }
                 WindowEvent::Resized(size) => {
-                    tracing::info!("tracing resized");
                     let gpu = world.resource(gpu()).clone();
-                    let option_gpu =  world.resource_mut(option_gpu()).clone();
-                    option_gpu.lock().resize(*size,&gpu.device);
+                    gpu.resize(*size);
 
                     let size = uvec2(size.width, size.height);
                     if let Some(window) = &self.window {
@@ -954,7 +1026,7 @@ impl App {
                     }
                 }
                 WindowEvent::CloseRequested => {
-                    tracing::info!("Closing...");
+                    tracing::debug!("Closing...");
                     *control_flow = ControlFlow::Exit;
                 }
                 WindowEvent::KeyboardInput { input, .. } => {
