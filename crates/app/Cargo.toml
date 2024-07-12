@@ -1,52 +1,66 @@
 [package]
-name = "ambient_app"
+edition = "2021"
+name = "ambient"
 version = { workspace = true }
 rust-version = { workspace = true }
-edition = "2021"
-description = "Ambient app implementation. Host-only."
-license = "MIT OR Apache-2.0"
 repository = "https://github.com/AmbientRun/Ambient"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 ambient_sys = { path = "../../../Ambient4/crates/sys" , version = "0.3.2-nightly-2023-12-29" }
-ambient_native_std = { path = "../../../Ambient4/crates/native_std" , version = "0.3.2-nightly-2023-12-29" }
-ambient_core = { path = "../../../Ambient4/crates/core" , version = "0.3.2-nightly-2023-12-29" }
-ambient_gizmos = { path = "../../../Ambient4/crates/gizmos" , version = "0.3.2-nightly-2023-12-29" }
-ambient_gpu = { path = "../../../Ambient4/crates/gpu" , version = "0.3.2-nightly-2023-12-29" }
-ambient_gpu_ecs = { path = "../../../Ambient4/crates/gpu_ecs" , version = "0.3.2-nightly-2023-12-29" }
-ambient_renderer = { path = "../../../Ambient4/crates/renderer" , version = "0.3.2-nightly-2023-12-29" }
+ambient_app = { path = "../../../Ambient4/crates/app" , version = "0.3.2-nightly-2023-12-29" }
+ambient_audio = { path = "../../../Ambient4/crates/audio" , version = "0.3.2-nightly-2023-12-29" }
 ambient_cameras = { path = "../../../Ambient4/crates/cameras" , version = "0.3.2-nightly-2023-12-29" }
+ambient_core = { path = "../../../Ambient4/crates/core" , version = "0.3.2-nightly-2023-12-29" }
+#ambient_debugger = { path = "../../../Ambient4/crates/debugger" , version = "0.3.2-nightly-2023-12-29" }
+ambient_decals = { path = "../../../Ambient4/crates/decals" , version = "0.3.2-nightly-2023-12-29" }
 ambient_ecs = { path = "../../../Ambient4/crates/ecs" , version = "0.3.2-nightly-2023-12-29" }
-ambient_ui_native = { path = "../../../Ambient4/crates/ui_native" , version = "0.3.2-nightly-2023-12-29" }
-ambient_focus = { path = "../../../Ambient4/crates/focus" , version = "0.3.2-nightly-2023-12-29" }
-ambient_input = { path = "../../../Ambient4/crates/input" , version = "0.3.2-nightly-2023-12-29" }
-ambient_model = { path = "../../../Ambient4/crates/model" , version = "0.3.2-nightly-2023-12-29" }
-ambient_animation = { path = "../../../Ambient4/crates/animation" , version = "0.3.2-nightly-2023-12-29" }
-ambient_procedurals = { path = "../../../Ambient4/crates/procedurals" , version = "0.3.2-nightly-2023-12-29" }
-ambient_settings = { path = "../../../Ambient4/crates/settings" , version = "0.3.2-nightly-2023-12-29" }
-
-ambient_element = { path = "../../../Ambient4/shared_crates/element" , version = "0.3.2-nightly-2023-12-29" }
+ambient_gizmos = { path = "../../../Ambient4/crates/gizmos" , version = "0.3.2-nightly-2023-12-29" }
+ambient_network = { path = "../../../Ambient4/crates/network" , version = "0.3.2-nightly-2023-12-29" }
+ambient_prefab = { path = "../../../Ambient4/crates/prefab" , version = "0.3.2-nightly-2023-12-29" }
+ambient_physics = { path = "../../../Ambient4/crates/physics" , version = "0.3.2-nightly-2023-12-29" }
 ambient_primitives = { path = "../../../Ambient4/crates/primitives" , version = "0.3.2-nightly-2023-12-29" }
-winit = { version = "0.28.7", default-features = false,features = ["android-native-activity"] }
+ambient_rpc = { path = "../../../Ambient4/crates/rpc" , version = "0.3.2-nightly-2023-12-29" }
+ambient_renderer = { path = "../../../Ambient4/crates/renderer" , version = "0.3.2-nightly-2023-12-29" }
 
-#winit = { workspace = true }
-flume = { workspace = true }
-glam = { workspace = true }
-profiling = { workspace = true }
+ambient_native_std = { path = "../../../Ambient4/crates/native_std" , version = "0.3.2-nightly-2023-12-29" }
+ambient_ui_native = { path = "../../../Ambient4/crates/ui_native" , version = "0.3.2-nightly-2023-12-29" }
+ambient_world_audio = { path = "../../../Ambient4/crates/world_audio" , version = "0.3.2-nightly-2023-12-29" }
+ambient_sky = { path = "../../../Ambient4/crates/sky" , version = "0.3.2-nightly-2023-12-29" }
+ambient_water = { path = "../../../Ambient4/crates/water" , version = "0.3.2-nightly-2023-12-29" }
+ambient_client_shared = { path = "../../../Ambient4/crates/client_shared/" , version = "0.3.2-nightly-2023-12-29" }
+ambient_package_semantic_native = { path = "../../../Ambient4/crates/package_semantic_native" , version = "0.3.2-nightly-2023-12-29" }
+ambient_settings = { path = "../../../Ambient4/crates/settings" , version = "0.3.2-nightly-2023-12-29" }
+ambient_git_rev_init = { path = "../../../Ambient4/crates/git_rev_init" , version = "0.3.2-dev" }
+ambient_std = { path = "../../../Ambient4/shared_crates/std" , version = "0.3.2-dev" }
+ambient_element = { path = "../../../Ambient4/shared_crates/element" , version = "0.3.2-nightly-2023-12-29" }
+once_cell = "1.15.0"
+time = { workspace = true }
 anyhow = { workspace = true }
-wgpu = { workspace = true }
-puffin = { workspace = true, optional = true }
-puffin_http = { workspace = true, optional = true }
-tracing = { workspace = true }
-parking_lot = { workspace = true }
-futures = "0.3.30"
-log = "0.4.0"
-env_logger = "0.10.0"
+glam = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+image = { workspace = true }
+#tracing = { workspace = true }
+tracing = {version = "0.1.37",features = ["log-always"]}
+winit = { version = "0.28.6", features = ["serde"] }
+tracing-stackdriver = "0.6.2"
+#quinn = { workspace = true }
 
+
+[dev-dependencies]
+glam = { workspace = true }
+rusty-hook = "^0.11.2"
+
+[features]
+no_bundled_certs = []
+default = ["tls-webpki-roots"]
+profile = ["ambient_app/profile"]
+tls-native-roots = ["ambient_network/tls-native-roots"]
+tls-webpki-roots = ["ambient_network/tls-webpki-roots"]
+hotload-includes = [
+    "ambient_app/hotload-includes",
+    "ambient_decals/hotload-includes",
+]
 [target.'cfg(not(target_os = "unknown"))'.dependencies]
-thread-priority = { workspace = true }
-
-#[patch.crates-io]
-#arboard = {path = "crates/arboard"}
+ambient_wasm = { path = "../../../Ambient4/crates/wasm" , version = "0.3.2-nightly-2023-12-29" }
+android-ndk = "0.0.6"

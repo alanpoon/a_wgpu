@@ -9,12 +9,12 @@ rust-version = "1.70.0"
 
 [workspace]
 members = [
-    "crates/*"
+   # "crates/*"
 ]
 [workspace.dependencies]
 aho-corasick = "1.1.1"
 profiling = { version = "1.0.11", features = ["profile-with-puffin"] }
-tracing = "0.1.37"
+tracing = {version = "0.1.37",features = ["log-always"]}
 tracing-tree = { version = "0.2", features = ["time"] }
 tracing-stackdriver = "0.6.2"
 tracing-subscriber = { version = "0.3.17", features = [
@@ -27,7 +27,7 @@ wgpu = { version = "0.16.3", features = ["serde", "trace", "replay"] }
 wgpu-types = { version = "0.16", features = ["serde"] }
 winit = { version = "0.28.6", features = ["serde","android-game-activity"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
-tokio = { version = "=1.32", features = ["parking_lot"] }
+tokio = { version = "1.36", features = ["full"] }
 bytemuck = { version = "1.14", features = ["derive"] }
 glam = { version = "0.24", features = ["bytemuck", "serde", "rand"] }
 gltf = "1.3.0"
@@ -85,7 +85,6 @@ async-recursion = "1.0.5"
 anyhow = { version = "1.0", features = ["backtrace"] }
 bitflags = "1.3"
 parking_lot = { version = "0.12.1", features = ["serde"] }
-clap = { version = "4.4", features = ["derive"] }
 sentry = { version = "0.31", default-features = false, features = [
     'backtrace',
     'contexts',
@@ -182,7 +181,7 @@ wasm-bindgen-futures = "0.4"
 # Networking
 #
 time = { version = "0.3", features = ["local-offset"] }
-quinn = { version = "0.10" }
+#quinn = { version = "0.10" }
 rustls-native-certs = "0.6.3"
 webpki-roots = "0.23.1"
 mikktspace = { git = "https://github.com/gltf-rs/mikktspace" }
@@ -194,9 +193,9 @@ rustls-pemfile = "1.0"
 #h3 = { git = "https://github.com/hyperium/h3" , commit = "c9058fe" }
 #h3-webtransport = { git = "https://github.com/hyperium/h3" }
 #h3-quinn = { git = "https://github.com/hyperium/h3" }
-h3 = { git = "https://github.com/hyperium/h3" , rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
-h3-webtransport = { git = "https://github.com/hyperium/h3" , rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
-h3-quinn = { git = "https://github.com/hyperium/h3" , rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
+#h3 = { git = "https://github.com/hyperium/h3" , rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
+#h3-webtransport = { git = "https://github.com/hyperium/h3" , rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
+#h3-quinn = { git = "https://github.com/hyperium/h3" , rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
 http = { version = "0.2.9" }
 
 #
@@ -218,7 +217,8 @@ opt-level = 3
 incremental = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-ambient_app = {path = "crates/app"}
+ambient_app = {path = "../Ambient4/crates/app"}
+ambient = {path = "crates/app"}
 winit = { version = "0.28.7", default-features = false,features = ["android-native-activity"] }
 android_logger = "0.11.0"
 log = "0.4.14"
@@ -232,3 +232,24 @@ target = "armv7-linux-androideabi"
 
 #[patch.crates-io]
 #arboard = {path = "crates/arboard"}
+
+#[patch.crates-io]
+#h3 = { git = "https://github.com/hyperium/h3",rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
+#h3-webtransport = { git = "https://github.com/hyperium/h3",rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
+#h3-quinn = { git = "https://github.com/hyperium/h3",rev = "22da9387f19d724852b3bf1dfd7e66f0fd45cb81" }
+
+[dependencies]
+android-ndk = "0.0.6"
+
+[package.metadata.android.signing.release]
+path = "your_keystore.keystore"
+keystore_password = "ambient"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.WRITE_EXTERNAL_STORAGE"
+
+[package.metadata.android]
+assets = "cert"
